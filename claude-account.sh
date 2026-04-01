@@ -53,7 +53,7 @@ _csw_msg() {
     [current_pin]="현재 고정"
     [pinned_projects]="고정된 프로젝트"
     [account_list]="계정 목록"
-    [pinned_label]="pin"
+    [pinned_label]="고정"
     [help_title]="사용법: claude account [add|delete|pin|status]"
     [help_account]="  claude account         계정 목록 및 전환"
     [help_add]="  claude account add     새 계정 추가"
@@ -459,7 +459,7 @@ _csw_cmd_status() {
 
     [[ ${#valid_paths[@]} -eq 0 ]] && continue
 
-    printf "    \033[2m[pinned]\033[0m\n"
+    printf "    \033[2m[$(_csw_msg pinned_label)]\033[0m\n"
     for proj_path in "${valid_paths[@]}"; do
       printf "    \033[2m→\033[0m  %s\n" "${proj_path}"
     done
