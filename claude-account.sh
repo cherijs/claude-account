@@ -2,6 +2,7 @@
 # claude-account — per-project & global account isolation for Claude Code CLI
 
 # ── 상수 ─────────────────────────────────────────────────────────────────────
+_CSW_REAL_HOME="${HOME}"
 _CSW_ACCOUNTS="${HOME}/.claude-accounts"
 _CSW_HOMES="${HOME}/.claude-homes"
 _CSW_CURRENT="${_CSW_ACCOUNTS}/.current"
@@ -162,15 +163,24 @@ _csw_make_stub() {
   local name="${1}"
   local stub="${_CSW_HOMES}/${name}"
   mkdir -p "${stub}"
-  if [[ ! -L "${stub}/.claude" ]] || [[ ! -e "${stub}/.claude" ]]; then
-    ln -sf "${_CSW_ACCOUNTS}/${name}" "${stub}/.claude"
-  fi
-  if [[ ! -L "${stub}/.claude.json" ]] || [[ ! -e "${stub}/.claude.json" ]]; then
-    ln -sf "${_CSW_ACCOUNTS}/${name}/.claude.json" "${stub}/.claude.json"
-  fi
-  if [[ ! -L "${stub}/Library" ]] || [[ ! -e "${stub}/Library" ]]; then
-    ln -sf "${HOME}/Library" "${stub}/Library"
-  fi
+
+  # 진짜 HOME의 모든 dotfile/디렉토리를 심볼릭 링크 (.claude, .claude.json 제외)
+  local item base
+  for item in "${_CSW_REAL_HOME}"/.[!.]* "${_CSW_REAL_HOME}"/..?*; do
+    [[ ! -e "${item}" ]] && continue
+    base="${item##*/}"
+    [[ "${base}" == ".claude" || "${base}" == ".claude.json" ]] && continue
+    [[ -e "${stub}/${base}" ]] && continue
+    ln -sf "${item}" "${stub}/${base}"
+  done
+
+  # Library (macOS)
+  [[ -d "${_CSW_REAL_HOME}/Library" && ! -e "${stub}/Library" ]] && \
+    ln -sf "${_CSW_REAL_HOME}/Library" "${stub}/Library"
+
+  # .claude, .claude.json은 계정별로 격리
+  ln -sf "${_CSW_ACCOUNTS}/${name}" "${stub}/.claude"
+  ln -sf "${_CSW_ACCOUNTS}/${name}/.claude.json" "${stub}/.claude.json"
 }
 
 _csw_account_email() {
@@ -506,17 +516,14 @@ claude() {
   [[ -z "${account}" ]] && account=$(_csw_current)
 
   if [[ -n "${account}" ]]; then
-    local stub="${_CSW_HOMES}/${account}"
-
-    if [[ ! -d "${stub}" ]]; then
-      if _csw_account_exists "${account}"; then
-        _csw_make_stub "${account}"
-      else
-        printf "[claude account] $(_csw_msg warn_not_found)\n" "${account}" >&2
-        command claude "$@"
-        return
-      fi
+    if ! _csw_account_exists "${account}"; then
+      printf "[claude account] $(_csw_msg warn_not_found)\n" "${account}" >&2
+      command claude "$@"
+      return
     fi
+
+    _csw_make_stub "${account}"
+    local stub="${_CSW_HOMES}/${account}"
 
     HOME="${stub}" command claude "$@"
   else
