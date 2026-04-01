@@ -16,13 +16,13 @@ Per-project & global account isolation for [Claude Code](https://github.com/anth
 
    **Homebrew (recommended):**
    ```bash
-   brew tap hunheelee/claude-account
+   brew tap hunhee98/claude-account
    brew install claude-account
    ```
 
    **Manual:**
    ```bash
-   git clone https://github.com/hunheelee/claude-account.git
+   git clone https://github.com/hunhee98/claude-account.git
    cd claude-account && ./install.sh
    ```
 
