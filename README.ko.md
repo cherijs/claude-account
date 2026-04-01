@@ -80,7 +80,7 @@ claude account pin        # 고정할 계정을 골라 주세요
 
 `claude`를 실행하면 이런 순서로 동작해요.
 
-1. 현재 디렉토리부터 위로 올라가며 `.claude-account` 파일을 찾아요
+1. `~/.claude-accounts/.pins/`에서 현재 디렉토리(또는 상위 디렉토리)에 고정된 계정을 찾아요
 2. 없으면 `~/.claude-accounts/.current`에 저장된 기본 계정을 써요
 3. 해당 계정 디렉토리로 `HOME`을 설정한 뒤 `claude`를 실행해요
 

@@ -73,7 +73,7 @@ The project path is recorded in `~/.claude-accounts/.pins/` — nothing is writt
 
 On every `claude` invocation, the wrapper:
 
-1. Looks for a `.claude-account` file in the current directory (and parents)
+1. Checks `~/.claude-accounts/.pins/` for an account pinned to the current directory (or a parent)
 2. Falls back to the global default in `~/.claude-accounts/.current`
 3. Sets `HOME` to the matching stub directory, then launches `claude`
 
