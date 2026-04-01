@@ -166,7 +166,7 @@ _csw_make_stub() {
 
   # 진짜 HOME의 모든 dotfile/디렉토리를 심볼릭 링크 (.claude, .claude.json 제외)
   local item base
-  for item in "${_CSW_REAL_HOME}"/.[!.]* "${_CSW_REAL_HOME}"/..?*; do
+  for item in "${_CSW_REAL_HOME}"/.[!.]*(N) "${_CSW_REAL_HOME}"/..?*(N); do
     [[ ! -e "${item}" ]] && continue
     base="${item##*/}"
     [[ "${base}" == ".claude" || "${base}" == ".claude.json" ]] && continue
