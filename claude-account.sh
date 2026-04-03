@@ -197,6 +197,46 @@ _csw_account_email() {
   done < "${json}"
 }
 
+# 계정의 최근 7일 output 토큰 합산 (python3 사용)
+# ccusage 방식 참고: requestId 기준 중복 제거, isApiErrorMessage 스킵
+_csw_account_tokens() {
+  local projects_dir="${_CSW_ACCOUNTS}/${1}/projects"
+  [[ -d "${projects_dir}" ]] || { echo 0; return }
+  python3 - "${projects_dir}" <<'PYEOF'
+import os, sys, json
+from datetime import datetime, timedelta, timezone
+week_ago = datetime.now(timezone.utc) - timedelta(days=7)
+total = 0
+seen = set()
+base = sys.argv[1]
+for proj in os.listdir(base):
+    pp = os.path.join(base, proj)
+    if not os.path.isdir(pp): continue
+    for fname in os.listdir(pp):
+        if not fname.endswith('.jsonl'): continue
+        try:
+            with open(os.path.join(pp, fname)) as f:
+                for line in f:
+                    d = json.loads(line)
+                    if d.get('isApiErrorMessage'): continue
+                    msg = d.get('message')
+                    if not isinstance(msg, dict): continue
+                    usage = msg.get('usage')
+                    if not usage: continue
+                    request_id = d.get('requestId') or msg.get('id')
+                    if request_id:
+                        if request_id in seen: continue
+                        seen.add(request_id)
+                    ts = d.get('timestamp', '')
+                    dt = datetime.fromisoformat(ts.replace('Z', '+00:00'))
+                    if dt >= week_ago:
+                        total += usage.get('output_tokens', 0)
+        except: pass
+print(total)
+PYEOF
+}
+
+
 _csw_find_project_account() {
   local current_dir="${PWD}"
   local pins_dir="${_CSW_ACCOUNTS}/.pins"
@@ -446,16 +486,38 @@ _csw_cmd_status() {
 
   echo ""
   printf "\033[2m$(_csw_msg account_list)\033[0m\n"
+
+  # 계정별 토큰 집계 후 최댓값 계산
+  local -A _tokens=()
+  local _max_tokens=0 _t
+  for acc in "${accounts[@]}"; do
+    _t=$(_csw_account_tokens "${acc}")
+    _tokens[${acc}]="${_t}"
+    (( _t > _max_tokens )) && _max_tokens="${_t}"
+  done
+
   local acc email label
   for acc in "${accounts[@]}"; do
     email=$(_csw_account_email "${acc}")
     label=""
     [[ -n "${email}" ]] && label="  \033[2m${email}\033[0m"
 
+    # 게이지 계산 (룩업 테이블)
+    local tok="${_tokens[${acc}]:-0}"
+    local pct=0
+    (( _max_tokens > 0 )) && pct=$(( tok * 100 / _max_tokens ))
+    local filled=$(( pct * 10 / 100 ))
+    local -a _bars=(
+      "░░░░░░░░░░" "▓░░░░░░░░░" "▓▓░░░░░░░░" "▓▓▓░░░░░░░"
+      "▓▓▓▓░░░░░░" "▓▓▓▓▓░░░░░" "▓▓▓▓▓▓░░░░" "▓▓▓▓▓▓▓░░░"
+      "▓▓▓▓▓▓▓▓░░" "▓▓▓▓▓▓▓▓▓░" "▓▓▓▓▓▓▓▓▓▓"
+    )
+    local bar="${_bars[$(( filled + 1 ))]}"
+
     if [[ "${acc}" == "${current}" ]]; then
-      printf "  \033[1m%s\033[0m%b\n" "${acc}" "${label}"
+      printf "  \033[1m%s\033[0m%b  \033[2m%s %d%%\033[0m\n" "${acc}" "${label}" "${bar}" "${pct}"
     else
-      printf "  \033[2m%s\033[0m%b\n" "${acc}" "${label}"
+      printf "  \033[2m%s\033[0m%b  \033[2m%s %d%%\033[0m\n" "${acc}" "${label}" "${bar}" "${pct}"
     fi
 
     local pins_file="${_CSW_ACCOUNTS}/.pins/${acc}"
