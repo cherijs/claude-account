@@ -545,103 +545,44 @@ _csw_cmd_status() {
   done < <(_csw_list_accounts)
   [[ ${#accounts[@]} -eq 0 ]] && return
 
-  echo ""
-  printf "\033[2m$(_csw_msg account_list)\033[0m\n"
-
-  # 이메일 미리 수집
+  # 이메일 수집
   local -A _emails=()
   local acc
   for acc in "${accounts[@]}"; do
     _emails[$acc]=$(_csw_account_email "${acc}")
   done
 
-  # ── 1단계: 모든 내용 즉시 출력, 계정 줄 위치 기록 ────────────────────────
-  local -A _acc_line=()   # 계정별 출력 줄 번호 (0-indexed)
-  local _line=0
-
-  for acc in "${accounts[@]}"; do
-    local _em="${_emails[$acc]:-}"
-    [[ -n "${_em}" ]] && _em="  \033[2m${_em}\033[0m"
-    if [[ "${acc}" == "${current}" ]]; then
-      printf "  \033[1m%-20s\033[0m%b  \033[2m·\033[0m\033[K\n" "${acc}" "${_em}"
-    else
-      printf "  \033[2m%-20s\033[0m%b  \033[2m·\033[0m\033[K\n" "${acc}" "${_em}"
-    fi
-    _acc_line[$acc]=${_line}
-    (( _line++ ))
-
-    # 핀 정보 즉시 출력
-    local pins_file="${_CSW_ACCOUNTS}/.pins/${acc}"
-    if [[ -f "${pins_file}" ]]; then
-      local -a valid_paths=() proj_path
-      while IFS= read -r proj_path; do
-        [[ -z "${proj_path}" ]] && continue
-        [[ -d "${proj_path}" ]] && valid_paths+=("${proj_path}")
-      done < "${pins_file}"
-      if [[ ${#valid_paths[@]} -gt 0 ]]; then
-        printf "    \033[2m[$(_csw_msg pinned_label)]\033[0m\n"
-        (( _line++ ))
-        for proj_path in "${valid_paths[@]}"; do
-          printf "    \033[2m→\033[0m  %s\n" "${proj_path}"
-          (( _line++ ))
-        done
-      fi
-    fi
-  done
-
-  local _total=${_line}  # 커서는 출력된 줄 수만큼 아래
-
-  # 게이지 컬럼만 in-place 업데이트하는 헬퍼
-  # 커서를 해당 계정 줄로 이동 → 게이지만 덮어씀 → 원위치
-  _csw_write_gauge() {
-    local _acc="${1}" _gauge="${2}"
-    local _dist=$(( _total - _acc_line[$_acc] ))
-    local _em="${_emails[$_acc]:-}"
-    [[ -n "${_em}" ]] && _em="  \033[2m${_em}\033[0m"
-    printf "\033[%dA\r" "${_dist}"
-    if [[ "${_acc}" == "${current}" ]]; then
-      printf "  \033[1m%-20s\033[0m%b  \033[2m%s\033[0m\033[K" "${_acc}" "${_em}" "${_gauge}"
-    else
-      printf "  \033[2m%-20s\033[0m%b  \033[2m%s\033[0m\033[K" "${_acc}" "${_em}" "${_gauge}"
-    fi
-    printf "\033[%dB" "${_dist}"
-  }
-
-  # ── 2단계: 백그라운드 비용 계산 ───────────────────────────────────────────
+  # 비용 계산 (백그라운드 + 단일 스피너)
   local _tmpfile
   _tmpfile=$(mktemp)
   _csw_calc_costs "${_tmpfile}" "${accounts[@]}" &
   local _bg_pid=$!
 
-  # ── 3단계: 게이지 영역만 로딩 애니메이션 ─────────────────────────────────
-  local -a _frames=("·" "··" "···")
-  local _fi=0
+  local -a _spin=("·" "··" "···")
+  local _si=0
   while kill -0 "${_bg_pid}" 2>/dev/null; do
-    local _frame="${_frames[$(( _fi % 3 + 1 ))]}"
-    for acc in "${accounts[@]}"; do
-      _csw_write_gauge "${acc}" "${_frame}"
-    done
-    sleep 0.2
-    (( _fi++ ))
+    printf "\r  \033[2m%s\033[0m " "${_spin[$(( _si % 3 + 1 ))]}"
+    sleep 0.15
+    (( _si++ ))
   done
   wait "${_bg_pid}"
+  printf "\r\033[K"
 
-  # ── 4단계: 게이지 영역에 최종 결과 렌더 ──────────────────────────────────
+  # 게이지 계산
   local -a _bars=(
     "░░░░░░░░░░" "▓░░░░░░░░░" "▓▓░░░░░░░░" "▓▓▓░░░░░░░"
     "▓▓▓▓░░░░░░" "▓▓▓▓▓░░░░░" "▓▓▓▓▓▓░░░░" "▓▓▓▓▓▓▓░░░"
     "▓▓▓▓▓▓▓▓░░" "▓▓▓▓▓▓▓▓▓░" "▓▓▓▓▓▓▓▓▓▓"
   )
-
+  local -A _gauge_map=()
   if [[ -s "${_tmpfile}" ]]; then
-    local _result_json
-    _result_json=$(cat "${_tmpfile}")
     local _gauge_lines
-    _gauge_lines=$(python3 - "${_result_json}" "${accounts[@]}" <<'PYEOF'
+    _gauge_lines=$(python3 - "${_tmpfile}" "${accounts[@]}" 2>/dev/null <<'PYEOF'
 import json, sys
-data  = json.loads(sys.argv[1])
+with open(sys.argv[1]) as f:
+    data = json.load(f)
 names = sys.argv[2:]
-mx    = max(data.values()) if data else 0
+mx = max(data.values()) if data else 0
 for n in names:
     c      = data.get(n, 0)
     pct    = int(c / mx * 100) if mx > 0 else 0
@@ -651,16 +592,40 @@ PYEOF
     )
     while IFS=$'\t' read -r _name _filled _pct _cost; do
       [[ -z "${_name}" ]] && continue
-      _csw_write_gauge "${_name}" "${_bars[$(( _filled + 1 ))]} ${_pct}%  ${_cost}"
+      _gauge_map[$_name]="${_bars[$(( _filled + 1 ))]} ${_pct}%  ${_cost}"
     done <<< "${_gauge_lines}"
-  else
-    for acc in "${accounts[@]}"; do
-      _csw_write_gauge "${acc}" "░░░░░░░░░░ 0%  \$0.0000"
-    done
   fi
   rm -f "${_tmpfile}"
 
-  printf "\n"
+  # 계정 목록 출력
+  echo ""
+  printf "\033[2m$(_csw_msg account_list)\033[0m\n"
+
+  for acc in "${accounts[@]}"; do
+    local _em="${_emails[$acc]:-}"
+    [[ -n "${_em}" ]] && _em="  \033[2m${_em}\033[0m"
+    local _gauge="${_gauge_map[$acc]:-░░░░░░░░░░ 0%  \$0.0000}"
+    if [[ "${acc}" == "${current}" ]]; then
+      printf "  \033[1m%-20s\033[0m%b  \033[2m%s\033[0m\n" "${acc}" "${_em}" "${_gauge}"
+    else
+      printf "  \033[2m%-20s\033[0m%b  \033[2m%s\033[0m\n" "${acc}" "${_em}" "${_gauge}"
+    fi
+
+    local pins_file="${_CSW_ACCOUNTS}/.pins/${acc}"
+    if [[ -f "${pins_file}" ]]; then
+      local -a valid_paths=() proj_path
+      while IFS= read -r proj_path; do
+        [[ -z "${proj_path}" ]] && continue
+        [[ -d "${proj_path}" ]] && valid_paths+=("${proj_path}")
+      done < "${pins_file}"
+      if [[ ${#valid_paths[@]} -gt 0 ]]; then
+        printf "    \033[2m[$(_csw_msg pinned_label)]\033[0m\n"
+        for proj_path in "${valid_paths[@]}"; do
+          printf "    \033[2m→\033[0m  %s\n" "${proj_path}"
+        done
+      fi
+    fi
+  done
 }
 
 # ── claude 래퍼 (진입점) ──────────────────────────────────────────────────────
