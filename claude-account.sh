@@ -198,17 +198,21 @@ _csw_account_email() {
 }
 
 # 계정별 비용 계산 (5시간 블록, LiteLLM 가격 캐시)
-# 사용: _csw_calc_costs <tmpfile> <account1> [account2 ...]
+# 사용: _csw_calc_costs <tmpfile> <real_claude_dir> <current_account> <account1> [account2 ...]
 # 결과: {"account": cost_usd, ...} JSON → tmpfile
 _csw_calc_costs() {
   local _tmpfile="${1}"
-  shift
-  python3 - "${_CSW_ACCOUNTS}" "$@" > "${_tmpfile}" 2>/dev/null <<'PYEOF'
+  local _real_claude="${2}"
+  local _current="${3}"
+  shift 3
+  python3 - "${_CSW_ACCOUNTS}" "${_real_claude}" "${_current}" "$@" > "${_tmpfile}" 2>/dev/null <<'PYEOF'
 import os, sys, json, time, urllib.request
 from datetime import datetime, timezone
 
-ACCOUNTS_DIR = sys.argv[1]
-NAMES        = sys.argv[2:]
+ACCOUNTS_DIR  = sys.argv[1]
+REAL_CLAUDE   = sys.argv[2]   # ~/.claude (실제 홈 디렉토리)
+CURRENT       = sys.argv[3]   # 현재 기본 계정명
+NAMES         = sys.argv[4:]
 CACHE_FILE   = os.path.join(ACCOUNTS_DIR, ".pricing_cache.json")
 CACHE_TTL    = 86400  # 24시간
 
@@ -255,13 +259,9 @@ def get_price(p, model):
         if model.startswith(k) or k.startswith(model): return p[k]
     return {"i": 3.0, "o": 15.0, "cw": 3.75, "cr": 0.30}
 
-def calc(name, pr):
-    d = os.path.join(ACCOUNTS_DIR, name, "projects")
-    if not os.path.isdir(d): return 0.0
-    now       = time.time()
-    blk_start = (now // 18000) * 18000  # 5시간 블록
-    total     = 0.0
-    seen      = set()
+def scan_dir(d, pr, seen, blk_start):
+    total = 0.0
+    if not os.path.isdir(d): return total
     for root, _, files in os.walk(d):
         for fn in files:
             if not fn.endswith(".jsonl"): continue
@@ -292,6 +292,24 @@ def calc(name, pr):
                             u.get("cache_read_input_tokens", 0)     * p2["cr"] / 1e6
                         )
             except: pass
+    return total
+
+def calc(name, pr):
+    now       = time.time()
+    blk_start = (now // 18000) * 18000  # 5시간 블록
+    seen      = set()
+    total     = 0.0
+
+    # 계정 전용 디렉토리
+    total += scan_dir(os.path.join(ACCOUNTS_DIR, name, "projects"), pr, seen, blk_start)
+
+    # 현재 계정이면 ~/.claude/projects/ 도 스캔 (IDE 등 직접 실행 케이스)
+    if name == CURRENT and REAL_CLAUDE:
+        real_proj = os.path.join(REAL_CLAUDE, "projects")
+        acc_proj  = os.path.realpath(os.path.join(ACCOUNTS_DIR, name, "projects"))
+        if os.path.realpath(real_proj) != acc_proj:
+            total += scan_dir(real_proj, pr, seen, blk_start)
+
     return total
 
 pr = load_pricing()
@@ -556,7 +574,7 @@ _csw_cmd_status() {
   # 비용 계산 (백그라운드 + 단일 스피너)
   local _tmpfile
   _tmpfile=$(mktemp)
-  _csw_calc_costs "${_tmpfile}" "${accounts[@]}" &
+  _csw_calc_costs "${_tmpfile}" "${_CSW_REAL_HOME}/.claude" "$(_csw_current)" "${accounts[@]}" &
   local _bg_pid=$!
 
   local -a _spin=("·" "··" "···")
