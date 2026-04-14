@@ -702,7 +702,7 @@ claude() {
     _csw_make_stub "${account}"
     local stub="${_CSW_HOMES}/${account}"
 
-    HOME="${stub}" command claude "$@"
+    PATH="${stub}/.local/bin:${PATH}" HOME="${stub}" command claude "$@"
   else
     command claude "$@"
   fi
