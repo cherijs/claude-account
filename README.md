@@ -5,8 +5,6 @@
 
 Per-project & global account isolation for [Claude Code](https://github.com/anthropics/claude-code). Switch between multiple Claude accounts instantly — pin accounts to projects so the right credentials are always used automatically.
 
-**[한국어](README.ko.md)**
-
 <!-- TODO: replace with actual gif -->
 <!-- ![demo](demo.gif) -->
 
