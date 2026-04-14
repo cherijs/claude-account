@@ -19,13 +19,13 @@
 
 **Homebrew (권장):**
 ```bash
-brew tap hunhee98/claude-account
+brew tap cherijs/claude-account
 brew install claude-account
 ```
 
 **직접 설치:**
 ```bash
-git clone https://github.com/hunhee98/claude-account.git
+git clone https://github.com/cherijs/claude-account.git
 cd claude-account && ./install.sh
 ```
 

@@ -22,7 +22,7 @@ jobs:
       - name: Checkout tap repo
         uses: actions/checkout@v4
         with:
-          repository: hunhee98/homebrew-claude-account
+          repository: cherijs/homebrew-claude-account
           token: ${{ secrets.TAP_GITHUB_TOKEN }}
           path: tap
 
