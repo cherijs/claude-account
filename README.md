@@ -3,10 +3,10 @@
 [![macOS](https://img.shields.io/badge/macOS-zsh-blue?style=flat-square)](https://www.apple.com/macos/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow?style=flat-square)](LICENSE)
 
-Per-project & global account isolation for [Claude Code](https://github.com/anthropics/claude-code). Switch between multiple Claude accounts instantly — pin accounts to projects so the right credentials are always used automatically.
+> **Fork Notice:** This is an English-localized fork of [hunhee98/claude-account](https://github.com/hunhee98/claude-account).
+> Original author: [@hunhee98](https://github.com/hunhee98)
 
-<!-- TODO: replace with actual gif -->
-<!-- ![demo](demo.gif) -->
+Per-project & global account isolation for [Claude Code](https://github.com/anthropics/claude-code). Switch between multiple Claude accounts instantly — pin accounts to projects so the right credentials are always used automatically.
 
 ## Get started
 
@@ -108,4 +108,4 @@ rm -rf ~/.claude-accounts ~/.claude-homes
 
 ## License
 
-MIT
+MIT - Originally created by [@hunhee98](https://github.com/hunhee98)
