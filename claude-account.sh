@@ -1,70 +1,16 @@
 #!/usr/bin/env zsh
 # claude-account — per-project & global account isolation for Claude Code CLI
 
-# ── 상수 ─────────────────────────────────────────────────────────────────────
+# ── Constants ───────────────────────────────────────────────────────────────
 _CSW_REAL_HOME="${HOME}"
 _CSW_ACCOUNTS="${HOME}/.claude-accounts"
 _CSW_HOMES="${HOME}/.claude-homes"
 _CSW_CURRENT="${_CSW_ACCOUNTS}/.current"
 
-# ── 언어 감지 & 메시지 ────────────────────────────────────────────────────────
-if [[ "${LANG:-${LC_ALL:-}}" == ko* ]]; then
-  _CSW_LANG="ko"
-else
-  _CSW_LANG="en"
-fi
-
+# ── Messages ────────────────────────────────────────────────────────────────
 _csw_msg() {
   local key="${1}"
   shift
-  local -A ko=(
-    [default_account]="기본 계정"
-    [project_account]="이 프로젝트"
-    [none]="없음"
-    [no_accounts]="저장된 계정이 없습니다."
-    [no_accounts_hint]="먼저 claude account add 로 계정을 추가하세요."
-    [select_default]="기본 계정 선택"
-    [select_delete]="삭제할 계정 선택"
-    [select_pin]="고정할 계정 선택"
-    [switched]="기본 계정 →"
-    [switched_note]="실행 중인 세션은 영향 없음. 새 claude 실행 시 적용됩니다."
-    [already_default]="은(는) 이미 기본 계정입니다."
-    [pinned]="계정으로 고정했습니다."
-    [add_title]="새 계정 추가"
-    [add_desc]="빈 환경으로 claude를 실행합니다. 브라우저에서 새 계정으로 로그인하세요."
-    [add_running]="▶ claude 실행 중... (브라우저에서 새 계정으로 로그인하세요)"
-    [add_name_prompt]="저장할 계정 이름: "
-    [add_name_empty]="이름을 입력하세요."
-    [add_name_invalid]="이름에 '/' 또는 '\\'는 사용할 수 없습니다."
-    [add_overwrite]="계정이 이미 존재합니다. 덮어쓰시겠습니까? (y/N): "
-    [add_overwrite_retry]="다른 이름을 입력하세요."
-    [add_done]="계정 저장 완료!"
-    [setup_zshrc]="~/.zshrc에 다음을 추가하세요:"
-    [setup_reload]="그 후 실행:"
-    [add_login_fail]="오류: 로그인이 완료되지 않은 것 같습니다."
-    [delete_no_deletable]="삭제 가능한 계정이 없습니다. (기본 계정은 삭제 불가)"
-    [delete_default_excluded]="기본 계정 삭제 불가 (목록에서 제외됨)"
-    [delete_confirm]="'%s' 계정을 삭제하시겠습니까? (y/N): "
-    [delete_done]="계정이 삭제되었습니다."
-    [cancelled]="취소되었습니다."
-    [warn_not_found]="경고: '%s' 계정을 찾을 수 없습니다. 기본값으로 실행합니다."
-    [warn_not_saved]="경고: '%s' 계정이 저장되어 있지 않습니다."
-    [err_not_found]="오류: '%s' 계정이 존재하지 않습니다."
-    [project_label]="프로젝트"
-    [current_pin]="현재 고정"
-    [pinned_projects]="고정된 프로젝트"
-    [account_list]="계정 목록"
-    [pinned_label]="고정"
-    [help_title]="사용법: claude account [add|delete|pin|status]"
-    [help_account]="  claude account         계정 목록 및 전환"
-    [help_add]="  claude account add     새 계정 추가"
-    [help_delete]="  claude account delete  계정 삭제"
-    [help_pin]="  claude account pin     이 프로젝트에 계정 고정"
-    [help_status]="  claude account status  현재 계정 확인"
-    [dep_missing]="gum이 설치되어 있지 않습니다. 자동 설치를 시작합니다..."
-    [dep_no_brew]="Homebrew가 없습니다. 먼저 Homebrew를 설치하세요."
-    [dep_fail]="gum 설치 실패. 수동으로 설치하세요: brew install gum"
-  )
   local -A en=(
     [default_account]="Default account"
     [project_account]="This project"
@@ -74,10 +20,15 @@ _csw_msg() {
     [select_default]="Select default account"
     [select_delete]="Select account to delete"
     [select_pin]="Select account to pin"
+    [select_unpin]="Select pin to remove"
     [switched]="Default account →"
     [switched_note]="Running sessions are not affected. Takes effect on next claude launch."
     [already_default]="is already the default account."
     [pinned]="account pinned."
+    [unpinned]="pin removed."
+    [no_pins]="No pinned projects."
+    [pin_conflict]="This path is already pinned to account '%s'. Move to '%s'? (y/N): "
+    [pin_moved]="moved from '%s' to '%s'."
     [add_title]="Add new account"
     [add_desc]="Claude will launch in a clean environment. Log in with a new account in the browser."
     [add_running]="▶ Launching claude... (log in with your new account in the browser)"
@@ -103,23 +54,19 @@ _csw_msg() {
     [pinned_projects]="Pinned projects"
     [account_list]="Accounts"
     [pinned_label]="pin"
-    [help_title]="Usage: claude account [add|delete|pin|status]"
+    [help_title]="Usage: claude account [add|delete|pin|unpin|status]"
     [help_account]="  claude account         Account list & switch"
     [help_add]="  claude account add     Add new account"
     [help_delete]="  claude account delete  Delete account"
     [help_pin]="  claude account pin     Pin account to this project"
+    [help_unpin]="  claude account unpin   Remove a pinned project"
     [help_status]="  claude account status  Show current account"
     [dep_missing]="gum is not installed. Installing automatically..."
     [dep_no_brew]="Homebrew is not installed. Please install it first."
     [dep_fail]="gum installation failed. Install manually: brew install gum"
   )
 
-  local msg
-  if [[ "${_CSW_LANG}" == "ko" ]]; then
-    msg="${ko[$key]}"
-  else
-    msg="${en[$key]}"
-  fi
+  local msg="${en[$key]}"
 
   if [[ $# -gt 0 ]]; then
     printf "${msg}\n" "$@"
@@ -128,7 +75,7 @@ _csw_msg() {
   fi
 }
 
-# ── 의존성 ────────────────────────────────────────────────────────────────────
+# ── Dependencies ────────────────────────────────────────────────────────────
 _csw_ensure_gum() {
   command -v gum &>/dev/null && return 0
 
@@ -141,7 +88,7 @@ _csw_ensure_gum() {
   brew install gum || { _csw_msg dep_fail >&2; return 1; }
 }
 
-# ── 내부 유틸 ─────────────────────────────────────────────────────────────────
+# ── Internal utilities ──────────────────────────────────────────────────────
 _csw_ensure_dirs() {
   mkdir -p "${_CSW_ACCOUNTS}"
   mkdir -p "${_CSW_HOMES}"
@@ -164,7 +111,7 @@ _csw_make_stub() {
   local stub="${_CSW_HOMES}/${name}"
   mkdir -p "${stub}"
 
-  # 진짜 HOME의 모든 dotfile/디렉토리를 심볼릭 링크 (.claude, .claude.json 제외)
+  # Symlink every dotfile/dotdir from the real HOME (excluding .claude, .claude.json)
   local item base
   for item in "${_CSW_REAL_HOME}"/.[!.]*(N) "${_CSW_REAL_HOME}"/..?*(N); do
     [[ ! -e "${item}" ]] && continue
@@ -178,7 +125,7 @@ _csw_make_stub() {
   [[ -d "${_CSW_REAL_HOME}/Library" && ! -e "${stub}/Library" ]] && \
     ln -sf "${_CSW_REAL_HOME}/Library" "${stub}/Library"
 
-  # .claude, .claude.json은 계정별로 격리
+  # Isolate .claude and .claude.json per account
   ln -sf "${_CSW_ACCOUNTS}/${name}" "${stub}/.claude"
   ln -sf "${_CSW_ACCOUNTS}/${name}/.claude.json" "${stub}/.claude.json"
 }
@@ -197,9 +144,9 @@ _csw_account_email() {
   done < "${json}"
 }
 
-# 계정별 비용 계산 (5시간 블록, LiteLLM 가격 캐시)
-# 사용: _csw_calc_costs <tmpfile> <real_claude_dir> <current_account> <account1> [account2 ...]
-# 결과: {"account": cost_usd, ...} JSON → tmpfile
+# Compute per-account cost (5-hour block, LiteLLM price cache)
+# Usage: _csw_calc_costs <tmpfile> <real_claude_dir> <current_account> <account1> [account2 ...]
+# Result: {"account": cost_usd, ...} JSON → tmpfile
 _csw_calc_costs() {
   local _tmpfile="${1}"
   local _real_claude="${2}"
@@ -210,11 +157,11 @@ import os, sys, json, time, urllib.request
 from datetime import datetime, timezone
 
 ACCOUNTS_DIR  = sys.argv[1]
-REAL_CLAUDE   = sys.argv[2]   # ~/.claude (실제 홈 디렉토리)
-CURRENT       = sys.argv[3]   # 현재 기본 계정명
+REAL_CLAUDE   = sys.argv[2]   # ~/.claude (real home directory)
+CURRENT       = sys.argv[3]   # current default account name
 NAMES         = sys.argv[4:]
 CACHE_FILE   = os.path.join(ACCOUNTS_DIR, ".pricing_cache.json")
-CACHE_TTL    = 86400  # 24시간
+CACHE_TTL    = 86400  # 24 hours
 
 FALLBACK = {
     "claude-opus-4":     {"i": 15.00, "o": 75.00, "cw": 18.75, "cr": 1.50},
@@ -296,14 +243,14 @@ def scan_dir(d, pr, seen, blk_start):
 
 def calc(name, pr):
     now       = time.time()
-    blk_start = (now // 18000) * 18000  # 5시간 블록
+    blk_start = (now // 18000) * 18000  # 5-hour block
     seen      = set()
     total     = 0.0
 
-    # 계정 전용 디렉토리
+    # Account-specific directory
     total += scan_dir(os.path.join(ACCOUNTS_DIR, name, "projects"), pr, seen, blk_start)
 
-    # 현재 계정이면 ~/.claude/projects/ 도 스캔 (IDE 등 직접 실행 케이스)
+    # For the current account, also scan ~/.claude/projects/ (covers IDE direct-run case)
     if name == CURRENT and REAL_CLAUDE:
         real_proj = os.path.join(REAL_CLAUDE, "projects")
         acc_proj  = os.path.realpath(os.path.join(ACCOUNTS_DIR, name, "projects"))
@@ -337,9 +284,46 @@ _csw_find_project_account() {
   return 1
 }
 
-# ── gum 선택 헬퍼 ────────────────────────────────────────────────────────────
+# Find which account a path is EXACTLY pinned to (no prefix match).
+# Prints the account name and returns 0 on match, or 1 if not pinned anywhere.
+_csw_find_exact_pin() {
+  local target="${1}"
+  local pins_dir="${_CSW_ACCOUNTS}/.pins"
+  [[ ! -d "${pins_dir}" ]] && return 1
+
+  local acc path
+  for acc in "${pins_dir}"/*; do
+    [[ ! -f "${acc}" ]] && continue
+    while IFS= read -r path; do
+      [[ -z "${path}" ]] && continue
+      if [[ "${target}" == "${path}" ]]; then
+        echo "${acc##*/}"
+        return 0
+      fi
+    done < "${acc}"
+  done
+  return 1
+}
+
+# Remove a specific path from an account's pin file. Deletes the file when empty.
+_csw_remove_pin() {
+  local acc="${1}" target="${2}"
+  local pin_file="${_CSW_ACCOUNTS}/.pins/${acc}"
+  [[ ! -f "${pin_file}" ]] && return 0
+
+  local tmp
+  tmp=$(mktemp)
+  grep -vxF "${target}" "${pin_file}" > "${tmp}" 2>/dev/null
+  if [[ -s "${tmp}" ]]; then
+    mv "${tmp}" "${pin_file}"
+  else
+    rm -f "${pin_file}" "${tmp}"
+  fi
+}
+
+# ── gum picker helper ──────────────────────────────────────────────────────
 # _csw_pick <header> < <(account list)
-# 선택된 항목을 stdout 으로 출력. 취소(Esc/Ctrl+C) 시 빈 문자열.
+# Prints the selected item to stdout. Empty string on cancel (Esc/Ctrl+C).
 _csw_pick() {
   local header="${1}"
   gum choose \
@@ -350,7 +334,7 @@ _csw_pick() {
     --header.foreground="8"
 }
 
-# ── 계정 관리 서브커맨드 ──────────────────────────────────────────────────────
+# ── Account management subcommands ─────────────────────────────────────────
 
 _csw_cmd_account() {
   _csw_ensure_dirs
@@ -373,7 +357,7 @@ _csw_cmd_account() {
     return 1
   fi
 
-  # 현재 기본 계정에 마커 추가
+  # Mark the current default account
   local -a display=()
   local acc
   for acc in "${accounts[@]}"; do
@@ -391,7 +375,7 @@ _csw_cmd_account() {
   selected=$(printf '%s\n' "${display[@]}" | _csw_pick "${header}")
   [[ -z "${selected}" ]] && return 0
 
-  # 마커 제거 후 전환
+  # Strip marker and switch
   _csw_switch_global "${selected%  ✓}"
 }
 
@@ -435,7 +419,23 @@ _csw_cmd_pin() {
   selected=$(printf '%s\n' "${accounts[@]}" | _csw_pick "${header}")
   [[ -z "${selected}" ]] && return 0
 
-  # 중앙 레지스트리에만 경로 등록 (중복 방지)
+  # Cross-account duplicate protection:
+  # if PWD is already pinned to a different account, offer to move it.
+  local existing
+  existing=$(_csw_find_exact_pin "${PWD}" 2>/dev/null)
+  if [[ -n "${existing}" && "${existing}" != "${selected}" ]]; then
+    printf "$(printf "$(_csw_msg pin_conflict)" "${existing}" "${selected}")"
+    local confirm
+    read -r confirm
+    if [[ ! "${confirm}" =~ ^[Yy]$ ]]; then
+      _csw_msg cancelled
+      return 0
+    fi
+    _csw_remove_pin "${existing}" "${PWD}"
+    printf "[claude account] $(_csw_msg pin_moved)\n" "${existing}" "${selected}"
+  fi
+
+  # Register path in the central registry (idempotent — no duplicates within the file)
   local pins_file="${_CSW_ACCOUNTS}/.pins/${selected}"
   mkdir -p "${_CSW_ACCOUNTS}/.pins"
   grep -qxF "${PWD}" "${pins_file}" 2>/dev/null || echo "${PWD}" >> "${pins_file}"
@@ -443,12 +443,57 @@ _csw_cmd_pin() {
   printf "[claude account] '\033[1m%s\033[0m' $(_csw_msg pinned)\n" "${selected}"
 }
 
+_csw_cmd_unpin() {
+  _csw_ensure_dirs
+  _csw_ensure_gum || return 1
+
+  local pins_dir="${_CSW_ACCOUNTS}/.pins"
+
+  # Collect every pinned "account → path" entry across all accounts
+  local -a display=()
+  local -A disp_to_acc=()
+  local -A disp_to_path=()
+
+  if [[ -d "${pins_dir}" ]]; then
+    local acc_file acc path d
+    for acc_file in "${pins_dir}"/*(N); do
+      [[ ! -f "${acc_file}" ]] && continue
+      acc="${acc_file##*/}"
+      while IFS= read -r path; do
+        [[ -z "${path}" ]] && continue
+        d="${acc} → ${path}"
+        display+=("${d}")
+        disp_to_acc[$d]="${acc}"
+        disp_to_path[$d]="${path}"
+      done < "${acc_file}"
+    done
+  fi
+
+  if [[ ${#display[@]} -eq 0 ]]; then
+    _csw_msg no_pins
+    return 0
+  fi
+
+  local header
+  header="$(_csw_msg select_unpin)"
+
+  local selected
+  selected=$(printf '%s\n' "${display[@]}" | _csw_pick "${header}")
+  [[ -z "${selected}" ]] && return 0
+
+  local sel_acc="${disp_to_acc[$selected]}"
+  local sel_path="${disp_to_path[$selected]}"
+
+  _csw_remove_pin "${sel_acc}" "${sel_path}"
+  printf "[claude account] '\033[1m%s\033[0m' $(_csw_msg unpinned)\n" "${sel_path}"
+}
+
 _csw_cmd_add() {
   echo ""
   printf "\033[1m[claude account] $(_csw_msg add_title)\033[0m\n"
   echo ""
 
-  # 1. 계정 이름 먼저 받기
+  # 1. Collect account name first
   local name
   while true; do
     printf "$(_csw_msg add_name_prompt)"
@@ -467,7 +512,7 @@ _csw_cmd_add() {
     break
   done
 
-  # 2. 로그인
+  # 2. Log in
   echo ""
   _csw_msg add_desc
   echo ""
@@ -484,7 +529,7 @@ _csw_cmd_add() {
     return 1
   fi
 
-  # 3. 저장
+  # 3. Save
   rm -rf "${_CSW_ACCOUNTS}/${name}"
   cp -r "${tmp_home}/.claude" "${_CSW_ACCOUNTS}/${name}"
   [[ -f "${tmp_home}/.claude.json" ]] && cp "${tmp_home}/.claude.json" "${_CSW_ACCOUNTS}/${name}/.claude.json"
@@ -564,14 +609,14 @@ _csw_cmd_status() {
   done < <(_csw_list_accounts)
   [[ ${#accounts[@]} -eq 0 ]] && return
 
-  # 이메일 수집
+  # Collect emails
   local -A _emails=()
   local acc
   for acc in "${accounts[@]}"; do
     _emails[$acc]=$(_csw_account_email "${acc}")
   done
 
-  # 비용 계산 (백그라운드 + 단일 스피너)
+  # Compute costs in the background with a single spinner
   local _tmpfile
   _tmpfile=$(mktemp)
   _csw_calc_costs "${_tmpfile}" "${_CSW_REAL_HOME}/.claude" "$(_csw_current)" "${accounts[@]}" &
@@ -587,7 +632,7 @@ _csw_cmd_status() {
   wait "${_bg_pid}"
   printf "\r\033[K"
 
-  # 게이지 계산
+  # Compute gauges
   local -a _bars=(
     "░░░░░░░░░░" "▓░░░░░░░░░" "▓▓░░░░░░░░" "▓▓▓░░░░░░░"
     "▓▓▓▓░░░░░░" "▓▓▓▓▓░░░░░" "▓▓▓▓▓▓░░░░" "▓▓▓▓▓▓▓░░░"
@@ -616,7 +661,7 @@ PYEOF
   fi
   rm -f "${_tmpfile}"
 
-  # 계정 목록 출력
+  # Print account list
   echo ""
   printf "\033[2m$(_csw_msg account_list)\033[0m\n"
 
@@ -648,7 +693,7 @@ PYEOF
   done
 }
 
-# ── claude 래퍼 (진입점) ──────────────────────────────────────────────────────
+# ── claude wrapper (entrypoint) ────────────────────────────────────────────
 claude() {
   _csw_ensure_dirs
 
@@ -663,6 +708,7 @@ claude() {
     printf "  %-50s%s\n" "account add"    "Log in and save a new account"
     printf "  %-50s%s\n" "account delete" "Remove a saved account"
     printf "  %-50s%s\n" "account pin"    "Pin an account to the current project"
+    printf "  %-50s%s\n" "account unpin"  "Remove a pinned project"
     printf "  %-50s%s\n" "account status" "Show the active account"
     return
   fi
@@ -672,6 +718,7 @@ claude() {
       add)    _csw_cmd_add ;;
       delete) _csw_cmd_delete ;;
       pin)    _csw_cmd_pin ;;
+      unpin)  _csw_cmd_unpin ;;
       status) _csw_cmd_status ;;
       "")     _csw_cmd_account ;;
       *)
@@ -681,13 +728,15 @@ claude() {
         _csw_msg help_add
         _csw_msg help_delete
         _csw_msg help_pin
+        _csw_msg help_unpin
         _csw_msg help_status
         ;;
     esac
     return
   fi
 
-  # 일반 실행 → 프로젝트 고정 계정 or 전역 기본 계정으로 HOME 오버라이드
+  # Regular run → override HOME with the project's pinned account,
+  # falling back to the global default.
   local account
   account=$(_csw_find_project_account 2>/dev/null)
   [[ -z "${account}" ]] && account=$(_csw_current)
